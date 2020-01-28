@@ -7,5 +7,5 @@ import WebService (app)
 
 main = do
     [updatePath] <- getArgs
-    chan <- mkChanFromFifo updatePath 17 -- 1/60s ~ 17ms
+    chan <- mkChanFromFifo updatePath 200
     app chan >>= run 8081
