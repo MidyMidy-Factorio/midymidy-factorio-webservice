@@ -18,4 +18,4 @@ app updates = scottyApp do
             Just json -> do
                 raw json
             Nothing -> do
-                text "{type:\"empty\"}"
+                raw "{type:\"empty\"}"
