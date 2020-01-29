@@ -15,3 +15,7 @@ app rcon = scottyApp do
         setHeader "Content-Type" "application/json; charset=utf-8"
         liftIO (sendCommand rcon "/_midymidyws get_update")
             >>= raw
+    get "/players" do
+        setHeader "Content-Type" "application/json; charset=utf-8"
+        liftIO (sendCommand rcon "/_midymidyws get_players")
+            >>= raw
