@@ -1,6 +1,10 @@
 module Rcon
     ( auth
     , sendCommand
+    , MuxConn
+    , multiplex
+    , execCommand
+    , closeMultiplexer
     ) where
 
 import System.IO (Handle)
@@ -8,9 +12,45 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Binary (Binary(get, put), Get, getWord8, Put, putWord8, encode, decode)
 import Data.Binary.Get (runGet, getInt32le, getLazyByteString)
 import Data.Binary.Put (putInt32le, putLazyByteString)
-import Control.Monad (guard, replicateM, mapM_)
-import Data.Bits (shift)
+import Data.Function (fix)
+import Control.Concurrent (forkIO)
+import Control.Concurrent.Chan (Chan, newChan, readChan, writeChan)
+import Control.Concurrent.MVar (MVar, newEmptyMVar, takeMVar, putMVar)
+import Control.Monad (guard)
 import qualified Data.ByteString.Lazy as BS
+
+type MuxConn = Chan (Maybe (ByteString, MVar ByteString))
+
+multiplex :: Handle -> IO MuxConn
+multiplex handle = do
+    requests <- newChan
+    replies <- newChan
+    forkIO . fix $ \loop -> do
+        req <- readChan requests
+        case req of
+            Just (cmd, reply) -> do
+                sendRequest handle (ExecCmdRequest 2 cmd)
+                writeChan replies (Just reply)
+                loop
+            Nothing -> writeChan replies Nothing
+    forkIO . fix $ \loop -> do
+        reply <- readChan replies
+        case reply of
+            Just rep -> do
+                GnrResponse 2 res <- recvResponse handle
+                putMVar rep res
+                loop
+            Nothing -> return ()
+    return requests
+
+execCommand :: MuxConn -> ByteString -> IO ByteString
+execCommand conn cmd = do
+    reply <- newEmptyMVar
+    writeChan conn (Just (cmd, reply))
+    takeMVar reply
+
+closeMultiplexer :: MuxConn -> IO ()
+closeMultiplexer conn = writeChan conn Nothing
 
 sendRequest :: Handle -> Request -> IO ()
 sendRequest handle req = BS.hPut handle (encode req)
