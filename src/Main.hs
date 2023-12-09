@@ -118,8 +118,7 @@ main = do
   when (not success) (throwIO (userError "Authentication failed"))
   conn <- multiplex handle
   forkIO . forever $ (tg2f (execCommand conn) >>= run 8085) `catch` printE
-  forkIO . forever $ f2tg (execCommand conn) `catch` printE
-  pure ()
+  forever $ f2tg (execCommand conn) `catch` printE
   where
     printE :: IOException -> IO ()
     printE = print . show
