@@ -44,7 +44,7 @@ rconPort = read . unsafePerformIO . getEnv $ "RCON_PORT"
 
 {-# NOINLINE rconPassword #-}
 rconPassword :: String
-rconPassword = read . unsafePerformIO . getEnv $ "RCON_PASSWORD"
+rconPassword = unsafePerformIO . getEnv $ "RCON_PASSWORD"
 
 botURL :: String
 botURL = "https://api.telegram.org/bot" ++ botToken
