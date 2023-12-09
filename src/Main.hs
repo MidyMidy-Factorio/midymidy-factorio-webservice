@@ -4,7 +4,7 @@ module Main ( main ) where
 
 import Control.Applicative ((<|>))
 import Control.Concurrent (threadDelay, forkIO)
-import Control.Exception (throwIO, catch, SomeException)
+import Control.Exception (throwIO, catch, IOException)
 import Control.Lens (folded, maximumOf, (.~), (^.), (^..), (^?), (^?!))
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (when, forever)
@@ -121,6 +121,6 @@ main = do
   forkIO . forever $ f2tg (execCommand conn) `catch` printE
   pure ()
   where
-    printE :: SomeException -> IO ()
+    printE :: IOException -> IO ()
     printE = print . show
 
