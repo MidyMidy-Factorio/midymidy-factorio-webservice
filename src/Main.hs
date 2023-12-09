@@ -93,7 +93,7 @@ data Message = Message
 f2tg :: (ByteString -> IO ByteString) -> IO ()
 f2tg rcon = forever $ do
   threadDelay 200_000
-  update <- fromJust . Json.decode <$> rcon "/get_update"
+  update <- fromJust . Json.decode <$> rcon "/_midymidyws get_update"
   case Text.unpack $ (update :: Json.Value) ^?! key "type" . _String of
     "console-chat" -> do
       let name = update ^?! key "player_name" . _String
