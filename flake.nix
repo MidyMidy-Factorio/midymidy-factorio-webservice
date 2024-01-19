@@ -7,6 +7,9 @@
         midymidy-factorio-webservice = nixpkgs.legacyPackages."${system}".callPackage ./default.nix {};
         default = midymidy-factorio-webservice;
       };
+      overlays.default = self: super: {
+        midymidy-factorio-webservice = self.callPackage ./default.nix {};
+      };
       devShells.default =
         with nixpkgs.legacyPackages.${system};
         mkShell {
