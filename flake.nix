@@ -17,7 +17,7 @@
             ]) ) ];
             buildPhase = ''
               runHook preBuild
-              ghc ./src/*.hs -o midymidy-factorio-webservice
+              ghc -O2 ./src/*.hs -o midymidy-factorio-webservice
               runHook postBuild
             '';
             installPhase = ''
