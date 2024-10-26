@@ -116,7 +116,7 @@ retry n io = retry_ 0 where
     print e
     if c < n
       then do
-        threadDelay $ (2 ^ c) * 1000
+        threadDelay $ (2 ^ c) * 1_000_000
         retry_ $ c + 1
       else throwIO e
 
