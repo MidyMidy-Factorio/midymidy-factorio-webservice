@@ -138,8 +138,5 @@ main = retry 10 do
   unless success (throwIO (userError "Authentication failed"))
   bracket (multiplex handle) closeMultiplexer \conn ->
     race
-      (forever $ (tg2f (execCommand conn) >>= run 8085) `catch` printE)
-      (forever $ f2tg (execCommand conn) `catch` printE)
-  where
-    printE :: IOException -> IO ()
-    printE = print
+      (retry 3 $ tg2f (execCommand conn) >>= run 8085)
+      (retry 3 $ f2tg (execCommand conn))
