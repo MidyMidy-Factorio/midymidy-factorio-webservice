@@ -2,17 +2,14 @@
 
 module Main (main) where
 
-import Control.Applicative ((<|>))
 import Control.Concurrent (threadDelay, forkIO, killThread, newEmptyMVar, putMVar, takeMVar)
 import Control.Exception (throwIO, catch, SomeException, bracket, Exception)
 import Control.Lens ((^?), (^?!), (?~), _Just)
 import Control.Monad.Fix (mfix)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when, forever, unless, void, forM_)
+import Control.Monad (forever, unless, void, forM_)
 import Data.Aeson.Lens (key, _Integer, _String)
 import Data.Function ((&))
-import Data.Maybe (fromJust, fromMaybe)
-import Data.Monoid (First(..))
+import Data.Maybe (fromJust)
 import GHC.Generics (Generic)
 import Network.Socket (socket, Family(AF_INET), SocketType(Stream), defaultProtocol, connect, SockAddr(SockAddrInet), tupleToHostAddress, socketToHandle, PortNumber)
 import qualified Data.Aeson as Json
@@ -20,7 +17,6 @@ import qualified Data.ByteString.Lazy as BS
 import qualified Data.ByteString.Lazy.UTF8 as BS
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as Text
-import qualified Data.Text.Encoding as Text
 import qualified Network.Matrix.Client as Mx
 import qualified Network.Matrix.Client.Lens as Mx
 import Rcon (auth, multiplex, execCommand, closeMultiplexer)
@@ -45,9 +41,10 @@ rconPassword :: String
 rconPassword = unsafePerformIO . getEnv $ "RCON_PASSWORD"
 
 unwrapMxError :: Either Mx.MatrixError a -> IO a
-unwrapMxError = either throwIO pure
+unwrapMxError = either (throwIO . WrapMatrixError) pure
 
-instance Exception Mx.MatrixError where
+newtype MatrixException = WrapMatrixError Mx.MatrixError deriving Show
+instance Exception MatrixException where
 
 mx2f :: Mx.ClientSession -> (BS.ByteString -> IO BS.ByteString) -> IO ()
 mx2f session rcon = do
@@ -56,11 +53,12 @@ mx2f session rcon = do
   unwrapMxError =<< Mx.syncPoll session (Just filterId) Nothing (Just Mx.Online) \syncRes ->
     forM_ (Mx.getTimelines syncRes) \(_, events) ->
       let
+        Mx.UserID userIdText = userId
         messages = flip concatMap (NonEmpty.toList events) \event ->
           let name = Mx.unAuthor . Mx.reSender $ event in
           case event ^? Mx._reContent . Mx._EventRoomMessage . Mx._RoomMessageText . Mx._mtBody of
-            Just text -> pure $ Message name text
-            Nothing -> []
+            Just text | name /= userIdText -> pure $ Message name text
+            _ -> []
       in void . rcon $ "/_midymidyws post_messages " <> Json.encode (PostMessages messages)
 
 data PostMessages = PostMessages
