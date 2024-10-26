@@ -9,7 +9,7 @@ import Control.Monad.Fix (mfix)
 import Control.Monad (forever, unless, void, forM_)
 import Data.Aeson.Lens (key, _Integer, _String)
 import Data.Function ((&))
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import GHC.Generics (Generic)
 import Network.Socket (socket, Family(AF_INET), SocketType(Stream), defaultProtocol, connect, SockAddr(SockAddrInet), tupleToHostAddress, socketToHandle, PortNumber)
 import qualified Data.Aeson as Json
@@ -17,12 +17,14 @@ import qualified Data.ByteString.Lazy as BS
 import qualified Data.ByteString.Lazy.UTF8 as BS
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Text as Text
+import qualified Data.Map.Strict as Map
 import qualified Network.Matrix.Client as Mx
 import qualified Network.Matrix.Client.Lens as Mx
 import Rcon (auth, multiplex, execCommand, closeMultiplexer)
 import System.Environment (getEnv)
 import System.IO (IOMode(ReadWriteMode))
 import System.IO.Unsafe (unsafePerformIO)
+import Unsafe.Coerce (unsafeCoerce)
 
 {-# NOINLINE homeServer#-}
 homeServer :: Text.Text
@@ -46,18 +48,24 @@ unwrapMxError = either (throwIO . WrapMatrixError) pure
 newtype MatrixException = WrapMatrixError Mx.MatrixError deriving Show
 instance Exception MatrixException where
 
+data UnsafeUser = UnsafeUser { unsafeUserDisplayName :: Maybe Text.Text, unsafeUserAvatarUrl :: Maybe Text.Text }
+
 mx2f :: Mx.ClientSession -> (BS.ByteString -> IO BS.ByteString) -> IO ()
 mx2f session rcon = do
   userId <- unwrapMxError =<< Mx.getTokenOwner session
   filterId <- unwrapMxError =<< Mx.createFilter session userId (Mx.messageFilter & Mx._filterRoom . _Just . Mx._rfTimeline . _Just . Mx._refRooms ?~ [matrixRoom])
+  members <- unwrapMxError =<< Mx.getRoomMembers session (Mx.RoomID matrixRoom)
   unwrapMxError =<< Mx.syncPoll session (Just filterId) Nothing (Just Mx.Online) \syncRes ->
     forM_ (Mx.getTimelines syncRes) \(_, events) ->
       let
         Mx.UserID userIdText = userId
         messages = flip concatMap (NonEmpty.toList events) \event ->
-          let name = Mx.unAuthor . Mx.reSender $ event in
+          let
+            uid = Mx.unAuthor . Mx.reSender $ event
+            name = fromMaybe uid ((unsafeUserDisplayName . unsafeCoerce) =<< Map.lookup (Mx.UserID uid) members)
+          in
           case event ^? Mx._reContent . Mx._EventRoomMessage . Mx._RoomMessageText . Mx._mtBody of
-            Just text | name /= userIdText -> pure $ Message name text
+            Just text | uid /= userIdText -> pure $ Message name text
             _ -> []
       in void . rcon $ "/_midymidyws post_messages " <> Json.encode (PostMessages messages)
 
