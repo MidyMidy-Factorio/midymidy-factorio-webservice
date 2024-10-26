@@ -1,16 +1,15 @@
-{-# LANGUAGE BlockArguments, OverloadedStrings, DeriveGeneric, DeriveAnyClass, NumericUnderscores #-}
+{-# LANGUAGE BlockArguments, OverloadedStrings, DeriveGeneric, DeriveAnyClass #-}
 
-module Main ( main ) where
+module Main (main) where
 
 import Control.Applicative ((<|>))
-import Control.Concurrent (threadDelay, forkIO)
-import Control.Exception (throwIO, catch, IOException)
-import Control.Lens (folded, maximumOf, (.~), (^.), (^..), (^?), (^?!))
+import Control.Concurrent (threadDelay, forkIO, killThread, newEmptyMVar, putMVar, takeMVar)
+import Control.Exception (throwIO, catch, IOException, SomeException, bracket)
+import Control.Lens ((^?), (^?!))
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (when, forever)
-import Data.Aeson.Lens (key, values, _Array, _Bool, _Integer, _String)
+import Control.Monad (when, forever, unless, void)
+import Data.Aeson.Lens (key, _Integer, _String)
 import Data.ByteString.Lazy (ByteString)
-import Data.List (isPrefixOf)
 import Data.Maybe (fromJust, fromMaybe)
 import Data.Monoid (First(..))
 import GHC.Generics (Generic)
@@ -23,12 +22,12 @@ import qualified Data.ByteString.Lazy.UTF8 as ByteString
 import qualified Data.ByteString.UTF8 as StrictByteString
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
-import Rcon (auth, multiplex, execCommand)
+import Rcon (auth, multiplex, execCommand, closeMultiplexer)
 import System.Environment (getEnv)
-import System.IO.Error (userError)
-import System.IO (Handle, IOMode(ReadWriteMode))
+import System.IO (IOMode(ReadWriteMode))
 import System.IO.Unsafe (unsafePerformIO)
-import Web.Scotty (scottyApp, get, post, body, raw, setHeader, raise)
+import Web.Scotty (scottyApp, post, body, raw, setHeader)
+import Control.Monad.Fix (mfix)
 
 {-# NOINLINE chatId #-}
 chatId :: Integer
@@ -69,7 +68,7 @@ tg2f rcon = scottyApp do
       raw . Json.encode $ Response "sendMessage" (ByteString.toString msg) cid (Just mid)
     chat (msg, _, _, name) = Just $ do
       let msgs = PostMessages [ Message name msg ]
-      liftIO $ rcon ("/_midymidyws post_messages " <> Json.encode msgs)
+      void . liftIO . rcon $ "/_midymidyws post_messages " <> Json.encode msgs
       pure ()
 
 data Response = Response
@@ -99,7 +98,9 @@ f2tg rcon = forever $ do
       let name = update ^?! key "player_name" . _String
           msg = update ^?! key "message" . _String
           text = "<" <> name <> ">: " <> msg
-      httpBS
+      void
+        . retry 10
+        . httpBS
         . setRequestQueryString
           [ ("chat_id", Just . StrictByteString.fromString . show $ chatId)
           , ("text", Just . Text.encodeUtf8 $ text)
@@ -109,17 +110,36 @@ f2tg rcon = forever $ do
       pure ()
     _ -> pure ()
 
+retry :: Int -> IO a -> IO a
+retry n io = retry_ 0 where
+  retry_ c = io `catch` \(e :: SomeException) -> do
+    print e
+    if c < n
+      then do
+        threadDelay $ (2 ^ c) * 1000
+        retry_ $ c + 1
+      else throwIO e
+
+race :: IO a -> IO a -> IO a
+race a b = do
+  result <- newEmptyMVar
+  void . mfix $ \(t1, t2) ->
+    liftA2 (,)
+      (forkIO $ (putMVar result =<< a) >> killThread t2)
+      (forkIO $ (putMVar result =<< b) >> killThread t1)
+  takeMVar result
+
 main :: IO ()
-main = do
+main = retry 10 do
   sock <- socket AF_INET Stream defaultProtocol
   connect sock (SockAddrInet rconPort (tupleToHostAddress (127, 0, 0, 1)))
   handle <- socketToHandle sock ReadWriteMode
   success <- auth handle (ByteString.fromString rconPassword)
-  when (not success) (throwIO (userError "Authentication failed"))
-  conn <- multiplex handle
-  forkIO . forever $ (tg2f (execCommand conn) >>= run 8085) `catch` printE
-  forever $ f2tg (execCommand conn) `catch` printE
+  unless success (throwIO (userError "Authentication failed"))
+  bracket (multiplex handle) closeMultiplexer \conn ->
+    race
+      (forever $ (tg2f (execCommand conn) >>= run 8085) `catch` printE)
+      (forever $ f2tg (execCommand conn) `catch` printE)
   where
     printE :: IOException -> IO ()
-    printE = print . show
-
+    printE = print
