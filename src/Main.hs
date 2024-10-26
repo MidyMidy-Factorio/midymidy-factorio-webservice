@@ -123,10 +123,10 @@ retry n io = retry_ 0 where
 race :: IO a -> IO a -> IO a
 race a b = do
   result <- newEmptyMVar
-  void . mfix $ \(t1, t2) ->
+  void . mfix $ \ ~(ta, tb) ->
     liftA2 (,)
-      (forkIO $ (putMVar result =<< a) >> killThread t2)
-      (forkIO $ (putMVar result =<< b) >> killThread t1)
+      (forkIO $ (putMVar result =<< a) >> killThread tb)
+      (forkIO $ (putMVar result =<< b) >> killThread ta)
   takeMVar result
 
 main :: IO ()
