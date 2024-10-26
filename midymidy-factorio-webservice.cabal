@@ -73,9 +73,9 @@ executable midymidy-factorio-webservice
 
     -- Other library packages from which modules are imported.
     build-depends:    base ^>=4.18.2.1,
-      scotty, wai, warp, text, bytestring,
+      text, bytestring, containers,
       utf8-string, binary, aeson, network,
-      lens, lens-aeson, http-conduit, http-client
+      lens, lens-aeson, matrix-client
 
     -- Directories containing source files.
     hs-source-dirs:   src

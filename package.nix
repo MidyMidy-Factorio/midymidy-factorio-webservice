@@ -1,6 +1,5 @@
-{ mkDerivation, aeson, base, binary, bytestring, http-client
-, http-conduit, lens, lens-aeson, lib, network, scotty, text
-, utf8-string, wai, warp
+{ mkDerivation, aeson, base, binary, bytestring, containers, lens
+, lens-aeson, lib, matrix-client, network, text, utf8-string
 }:
 mkDerivation {
   pname = "midymidy-factorio-webservice";
@@ -9,8 +8,8 @@ mkDerivation {
   isLibrary = false;
   isExecutable = true;
   executableHaskellDepends = [
-    aeson base binary bytestring http-client http-conduit lens
-    lens-aeson network scotty text utf8-string wai warp
+    aeson base binary bytestring containers lens lens-aeson
+    matrix-client network text utf8-string
   ];
   homepage = "https://github.com/nicball/midymidy-factorio-webservice";
   license = lib.licenses.agpl3Plus;
