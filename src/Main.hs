@@ -3,7 +3,7 @@
 module Main (main) where
 
 import Control.Concurrent (threadDelay, forkIO, killThread, newEmptyMVar, putMVar, takeMVar)
-import Control.Exception (throwIO, catch, SomeException, bracket, Exception)
+import Control.Exception (throwIO, catch, SomeException, bracket, Exception, onException)
 import Control.Lens ((^?), (^?!), (?~), _Just)
 import Control.Monad.Fix (mfix)
 import Control.Monad (forever, unless, void, forM_, (<=<))
@@ -92,8 +92,10 @@ f2mx rcon session = forever $ do
           msg = update ^?! key "message" . _String
           text = if msg == "!refresh" then msg else "<" <> name <> ">: " <> msg
           txnId = Text.pack $ show (update ^?! key "tick" . _Integer) <> "-" <> show (update ^?! key "event_id" . _Integer)
-      void $ Mx.sendMessage session (Mx.RoomID matrixRoom) (Mx.EventRoomMessage (Mx.RoomMessageText (Mx.MessageText text Mx.TextType Nothing Nothing))) (Mx.TxnID txnId)
+      void . flip onException report . retry 3 $ Mx.sendMessage session (Mx.RoomID matrixRoom) (Mx.EventRoomMessage (Mx.RoomMessageText (Mx.MessageText text Mx.TextType Nothing Nothing))) (Mx.TxnID txnId)
     _ -> pure ()
+  where
+    report = rcon $ "/_midymidyws post_messages " <> Json.encode (PostMessages [Message "bridge" "转发失败"])
 
 retry :: Int -> IO a -> IO a
 retry n io = retry_ 0 where
