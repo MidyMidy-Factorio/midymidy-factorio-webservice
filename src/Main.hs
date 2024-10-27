@@ -6,7 +6,7 @@ import Control.Concurrent (threadDelay, forkIO, killThread, newEmptyMVar, putMVa
 import Control.Exception (throwIO, catch, SomeException, bracket, Exception)
 import Control.Lens ((^?), (^?!), (?~), _Just)
 import Control.Monad.Fix (mfix)
-import Control.Monad (forever, unless, void, forM_)
+import Control.Monad (forever, unless, void, forM_, (<=<))
 import Data.Aeson.Lens (key, _Integer, _String)
 import Data.Function ((&))
 import Data.Maybe (fromJust, fromMaybe)
@@ -25,6 +25,8 @@ import System.Environment (getEnv)
 import System.IO (IOMode(ReadWriteMode))
 import System.IO.Unsafe (unsafePerformIO)
 import Unsafe.Coerce (unsafeCoerce)
+import Data.IORef (readIORef, newIORef, writeIORef)
+import Data.Traversable (for)
 
 {-# NOINLINE homeServer#-}
 homeServer :: Text.Text
@@ -54,20 +56,21 @@ mx2f :: Mx.ClientSession -> (BS.ByteString -> IO BS.ByteString) -> IO ()
 mx2f session rcon = do
   userId <- unwrapMxError =<< Mx.getTokenOwner session
   filterId <- unwrapMxError =<< Mx.createFilter session userId (Mx.messageFilter & Mx._filterRoom . _Just . Mx._rfTimeline . _Just . Mx._refRooms ?~ [matrixRoom])
-  members <- unwrapMxError =<< Mx.getRoomMembers session (Mx.RoomID matrixRoom)
+  members <- newIORef =<< unwrapMxError =<< Mx.getRoomMembers session (Mx.RoomID matrixRoom)
   unwrapMxError =<< Mx.syncPoll session (Just filterId) Nothing (Just Mx.Online) \syncRes ->
-    forM_ (Mx.getTimelines syncRes) \(_, events) ->
-      let
-        Mx.UserID userIdText = userId
-        messages = flip concatMap (NonEmpty.toList events) \event ->
-          let
-            uid = Mx.unAuthor . Mx.reSender $ event
-            name = fromMaybe uid ((unsafeUserDisplayName . unsafeCoerce) =<< Map.lookup (Mx.UserID uid) members)
-          in
-          case event ^? Mx._reContent . Mx._EventRoomMessage . Mx._RoomMessageText . Mx._mtBody of
-            Just text | uid /= userIdText -> pure $ Message name text
-            _ -> []
-      in void . rcon $ "/_midymidyws post_messages " <> Json.encode (PostMessages messages)
+    forM_ (Mx.getTimelines syncRes) \(_, events) -> do
+      let Mx.UserID userIdText = userId
+      messages <- (concat <$>) . for (NonEmpty.toList events) $ \event -> do
+        let uid = Mx.unAuthor . Mx.reSender $ event
+        name <- fromMaybe uid . ((unsafeUserDisplayName . unsafeCoerce) <=< Map.lookup (Mx.UserID uid)) <$> readIORef members
+        case event ^? Mx._reContent . Mx._EventRoomMessage . Mx._RoomMessageText . Mx._mtBody of
+          Just text
+            | text == "!refresh" -> do
+              writeIORef members =<< unwrapMxError =<< Mx.getRoomMembers session (Mx.RoomID matrixRoom)
+              pure []
+            | uid /= userIdText -> pure [Message name text]
+          _ -> pure []
+      void . rcon $ "/_midymidyws post_messages " <> Json.encode (PostMessages messages)
 
 data PostMessages = PostMessages
   { messages :: [Message] }
@@ -87,7 +90,7 @@ f2mx rcon session = forever $ do
     "console-chat" -> do
       let name = update ^?! key "player_name" . _String
           msg = update ^?! key "message" . _String
-          text = "<" <> name <> ">: " <> msg
+          text = if msg == "!refresh" then msg else "<" <> name <> ">: " <> msg
           txnId = Text.pack $ show (update ^?! key "tick" . _Integer) <> "-" <> show (update ^?! key "event_id" . _Integer)
       void $ Mx.sendMessage session (Mx.RoomID matrixRoom) (Mx.EventRoomMessage (Mx.RoomMessageText (Mx.MessageText text Mx.TextType Nothing Nothing))) (Mx.TxnID txnId)
     _ -> pure ()
