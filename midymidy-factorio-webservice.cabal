@@ -75,7 +75,7 @@ executable midymidy-factorio-webservice
     build-depends:    base ^>=4.18.2.1,
       text, bytestring, containers,
       utf8-string, binary, aeson, network,
-      lens, lens-aeson, matrix-client
+      lens, lens-aeson, matrix-client, async
 
     -- Directories containing source files.
     hs-source-dirs:   src

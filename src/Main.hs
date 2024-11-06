@@ -2,10 +2,10 @@
 
 module Main (main) where
 
-import Control.Concurrent (threadDelay, forkIO, killThread, newEmptyMVar, putMVar, takeMVar)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (race_)
 import Control.Exception (throwIO, catch, SomeException, bracket, Exception, onException)
 import Control.Lens ((^?), (^?!), (?~), _Just)
-import Control.Monad.Fix (mfix)
 import Control.Monad (forever, unless, void, forM_, (<=<))
 import Data.Aeson.Lens (key, _Integer, _String)
 import Data.Function ((&))
@@ -107,15 +107,6 @@ retry n io = retry_ 0 where
         retry_ $ c + 1
       else throwIO e
 
-race :: IO a -> IO a -> IO a
-race a b = do
-  result <- newEmptyMVar
-  void . mfix $ \ ~(ta, tb) ->
-    liftA2 (,)
-      (forkIO $ (putMVar result =<< a) >> killThread tb)
-      (forkIO $ (putMVar result =<< b) >> killThread ta)
-  takeMVar result
-
 main :: IO ()
 main = retry 10 do
   sock <- socket AF_INET Stream defaultProtocol
@@ -126,6 +117,6 @@ main = retry 10 do
   matrixToken <- Mx.getTokenFromEnv "MATRIX_TOKEN"
   session <- Mx.createSession homeServer matrixToken
   bracket (multiplex handle) closeMultiplexer \conn ->
-    race
+    race_
       (retry 3 $ mx2f session (execCommand conn))
       (retry 3 $ f2mx (execCommand conn) session)
