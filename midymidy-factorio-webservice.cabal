@@ -72,7 +72,7 @@ executable midymidy-factorio-webservice
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.18.2.1,
+    build-depends:    base,
       text, bytestring, containers,
       utf8-string, binary, aeson, network,
       lens, lens-aeson, matrix-client, async
